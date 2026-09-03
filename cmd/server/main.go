@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Taterbro/portfolio-backend/internal/config"
-	"github.com/Taterbro/portfolio-backend/internal/db"
-	"github.com/Taterbro/portfolio-backend/internal/router"
+	"github.com/Taterbro/notagram-v2/internal/config"
+	"github.com/Taterbro/notagram-v2/internal/db"
+	"github.com/Taterbro/notagram-v2/internal/router"
 )
 
 func main() {

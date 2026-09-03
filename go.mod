@@ -1,4 +1,4 @@
-module github.com/Taterbro/portfolio-backend
+module github.com/Taterbro/notagram-v2
 
 go 1.25.3
 
