@@ -4,11 +4,13 @@ import (
 	"database/sql"
 
 	"github.com/Taterbro/notagram-v2/internal/config"
+	"github.com/Taterbro/notagram-v2/internal/db/models"
 	"github.com/gin-gonic/gin"
 )
 
 func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB) {
-	h := NewHandler(cfg, db)
+	q := models.New(db)
+	h := NewHandler(cfg, q)
 
 	r.POST("/signup", h.Signup)
 	r.GET("/login", h.Login)

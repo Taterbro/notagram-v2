@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,20 +15,28 @@ import (
 	"github.com/Taterbro/notagram-v2/internal/db/models"
 	"github.com/Taterbro/notagram-v2/internal/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	//"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type Handler struct {
-	cfg *config.Config
-	db  *sql.DB
+type UserQuerier interface {
+	GetUserByEmail(ctx context.Context, email string) (models.User, error)
+	CreateUser(ctx context.Context, arg models.CreateUserParams) (models.User, error)
+	CreateEncryption(ctx context.Context, arg models.CreateEncryptionParams) (models.UserEncryption, error)
+	DeleteUserByID(ctx context.Context, id uuid.UUID) error
 }
 
-func NewHandler(cfg *config.Config, db *sql.DB) *Handler {
+type Handler struct {
+	cfg *config.Config
+	q   UserQuerier
+}
+
+func NewHandler(cfg *config.Config, q UserQuerier) *Handler {
 	return &Handler{
 		cfg: cfg,
-		db:  db,
+		q:   q,
 	}
 }
 
@@ -71,9 +80,8 @@ func (h Handler) Signup(c *gin.Context) {
 		return
 	}
 
-	q := models.New(h.db)
 	formattedEmail := strings.ToLower(req.Email)
-	_, err := q.GetUserByEmail(c, formattedEmail)
+	_, err := h.q.GetUserByEmail(c, formattedEmail)
 	if err == nil {
 		api.Error(c, http.StatusBadRequest, "email already exists; login instead", nil)
 		return
@@ -85,7 +93,7 @@ func (h Handler) Signup(c *gin.Context) {
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
-		createdUser, err := q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker}, PasswordHash: string(bytes)})
+		createdUser, err := h.q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker}, PasswordHash: string(bytes)})
 		if err != nil {
 			slog.Error("error while creating user account", "db_error", err, "user_email", req.Email, "user_moniker", req.Moniker, "password_hash", string(bytes))
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
@@ -95,17 +103,19 @@ func (h Handler) Signup(c *gin.Context) {
 		if err != nil {
 			slog.Error("error while marshalling user password params to json", "marshall_error", err)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
 		}
 
 		r, err := json.Marshal(req.RecoveryParams)
 		if err != nil {
 			slog.Error("error while marshalling user recovery params to json", "marshall_error", err)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
 		}
 
-		_, err = q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec})
+		_, err = h.q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec})
 		if err != nil {
-			err = q.DeleteUserByID(c, createdUser.ID)
+			err = h.q.DeleteUserByID(c, createdUser.ID)
 			if err != nil {
 				slog.Error("failed to delete user data after encryption key failure", "err", err, "user_id", createdUser.ID)
 			}
