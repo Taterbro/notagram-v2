@@ -12,8 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-var jwtSecret []byte
-
 type TokenType string
 
 const (
@@ -37,14 +35,16 @@ func GenerateAccessToken(user_id uuid.UUID, cfg config.Config) (string, error) {
 
 func GenerateRefreshToken(cfg config.Config) (string, error) {
 	ttl := 167 * time.Hour
+	expiresAt := time.Now().Add(ttl)
 
 	claims := jwt.MapClaims{
-		"exp": time.Now().Add(ttl).Unix(),
+		"exp": expiresAt.Unix(),
 		"iss": "api.notagram.app",
 		"jti": uuid.NewString(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
 	return token.SignedString([]byte(cfg.JwtSecret))
 }
 

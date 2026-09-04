@@ -12,6 +12,7 @@ type Config struct {
 	Env         string
 	DatabaseUrl string
 	JwtSecret   string
+	RedisAddr   string
 }
 
 func Load() (*Config, error) {
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
 		Env:         os.Getenv("APP_ENV"),
 		DatabaseUrl: os.Getenv("DATABASE_URL"),
 		JwtSecret:   os.Getenv("JWT_SECRET"),
+		RedisAddr:   os.Getenv("REDIS_ADDR"),
 	}
 	if cfg.Env == "" {
 		return nil, errors.New("environment variable missing: APP_ENV")
@@ -33,6 +35,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.JwtSecret == "" {
 		return nil, errors.New("environment variable missing: JWT_SECRET")
+	}
+	if cfg.RedisAddr == "" {
+		return nil, errors.New("environment variable missing: REDIS_ADDR")
 	}
 	slog.Info("all environment variables loaded successfully")
 	return cfg, nil

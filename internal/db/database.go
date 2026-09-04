@@ -6,17 +6,17 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func Connect(url string) error {
+func Connect(url string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", url)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer db.Close()
 
 	err = db.Ping()
 	if err != nil {
-		return err
+		db.Close()
+		return nil, err
 	}
-	return nil
+	return db, nil
 
 }

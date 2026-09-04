@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/Taterbro/notagram-v2/internal/api"
+	auth_service "github.com/Taterbro/notagram-v2/internal/auth"
 	"github.com/Taterbro/notagram-v2/internal/config"
 	"github.com/Taterbro/notagram-v2/internal/db/models"
 	"github.com/Taterbro/notagram-v2/internal/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 
 	//"github.com/google/uuid"
@@ -123,14 +125,14 @@ func (h Handler) Signup(c *gin.Context) {
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
-		accessToken, err := GenerateAccessToken(createdUser.ID, *h.cfg)
+		accessToken, err := auth_service.GenerateAccessToken(createdUser.ID, *h.cfg)
 		if err != nil {
 			slog.Error("error while generating access token", "err", err, "user_id", createdUser.ID)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
 
-		refreshToken, err := GenerateRefreshToken(*h.cfg)
+		refreshToken, err := auth_service.GenerateRefreshToken(*h.cfg)
 		if err != nil {
 			slog.Error("error while generating refresh token", "err", err, "user_id", createdUser.ID)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
@@ -165,4 +167,41 @@ func (h Handler) Signup(c *gin.Context) {
 func (h Handler) Login(c *gin.Context) {
 	//loginState = uuid.New().String()
 	api.Success(c, http.StatusOK, map[string]string{"url": "some random bs fr", "message": "open the url in your browser"})
+}
+
+type LogoutBody struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+func (h Handler) Logout(c *gin.Context) {
+	var req LogoutBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errs := utils.FormatValidationErrors(err)
+		api.Error(c, http.StatusBadRequest, "invalid body", errs)
+		return
+	}
+
+	_, err := auth_service.ValidateToken(req.RefreshToken, *h.cfg)
+	if err != nil {
+		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
+
+	token, err := jwt.Parse(req.RefreshToken, func(token *jwt.Token) (any, error) {
+		return []byte(h.cfg.JwtSecret), nil
+	})
+
+	if err != nil {
+		slog.Error("error parsing refresh token", "err", err)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	claims, _ := token.Claims.(jwt.MapClaims)
+	exp := claims["exp"].(float64)
+
+	expiresAt := time.Unix(int64(exp), 0)
+
+	ttl := time.Until(expiresAt)
+
 }
