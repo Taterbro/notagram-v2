@@ -18,10 +18,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	//"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+type RedisClient interface {
+	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
+}
 
 type UserQuery interface {
 	GetUserByEmail(ctx context.Context, email string) (models.User, error)
@@ -31,14 +36,16 @@ type UserQuery interface {
 }
 
 type Handler struct {
-	cfg *config.Config
-	q   UserQuery
+	cfg   *config.Config
+	q     UserQuery
+	redis RedisClient
 }
 
-func NewHandler(cfg *config.Config, q UserQuery) *Handler {
+func NewHandler(cfg *config.Config, q UserQuery, redis RedisClient) *Handler {
 	return &Handler{
-		cfg: cfg,
-		q:   q,
+		cfg:   cfg,
+		q:     q,
+		redis: redis,
 	}
 }
 
@@ -181,27 +188,41 @@ func (h Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	_, err := auth_service.ValidateToken(req.RefreshToken, *h.cfg)
+	token, err := auth_service.ValidateToken(req.RefreshToken, *h.cfg)
 	if err != nil {
 		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
 		return
 	}
 
-	token, err := jwt.Parse(req.RefreshToken, func(token *jwt.Token) (any, error) {
-		return []byte(h.cfg.JwtSecret), nil
-	})
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
 
-	if err != nil {
-		slog.Error("error parsing refresh token", "err", err)
+	jti, ok := claims["jti"].(string)
+	if !ok {
+		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
+
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
+
+	ttl := time.Until(time.Unix(int64(exp), 0))
+	if ttl <= 0 {
+		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
+
+	if err := h.redis.Set(c.Request.Context(), jti, "revoked", ttl).Err(); err != nil {
+		slog.Error("failed to revoke token in redis", "err", err, "jti", jti)
 		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 		return
 	}
 
-	claims, _ := token.Claims.(jwt.MapClaims)
-	exp := claims["exp"].(float64)
-
-	expiresAt := time.Unix(int64(exp), 0)
-
-	ttl := time.Until(expiresAt)
-
+	api.Success(c, http.StatusOK, nil)
 }

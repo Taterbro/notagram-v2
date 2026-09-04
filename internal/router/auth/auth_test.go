@@ -16,7 +16,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/assert/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 )
+
+type fakeRedis struct{}
+
+func (f *fakeRedis) Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd {
+	return redis.NewStatusResult("OK", nil)
+}
 
 type fakeQuerier struct {
 	getUserErr       error
@@ -119,7 +126,7 @@ func TestSignup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewHandler(testConfig(), tt.q)
+			h := NewHandler(testConfig(), tt.q, &fakeRedis{})
 
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)

@@ -13,7 +13,7 @@ func NewRouter(cfg *config.Config, db *sql.DB, rd *redis.Client) *gin.Engine {
 	r := gin.Default()
 	api := r.Group("/api")
 
-	auth.RegisterRoutes(api.Group("/auth"), cfg, db)
+	auth.RegisterRoutes(api.Group("/auth"), cfg, db, rd)
 
 	return r
 }

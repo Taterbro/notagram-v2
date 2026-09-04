@@ -8,10 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB) {
+func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis RedisClient) {
 	q := models.New(db)
-	h := NewHandler(cfg, q)
+	h := NewHandler(cfg, q, redis)
 
 	r.POST("/signup", h.Signup)
 	r.GET("/login", h.Login)
+	r.POST("/logout", h.Logout)
 }
