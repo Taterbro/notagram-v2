@@ -32,7 +32,7 @@ func GenerateAccessToken(user_id uuid.UUID, cfg config.Config) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(cfg.JwtSecret)
+	return token.SignedString([]byte(cfg.JwtSecret))
 }
 
 func GenerateRefreshToken(cfg config.Config) (string, error) {
@@ -45,7 +45,7 @@ func GenerateRefreshToken(cfg config.Config) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(cfg.JwtSecret)
+	return token.SignedString([]byte(cfg.JwtSecret))
 }
 
 func ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error) {

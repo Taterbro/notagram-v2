@@ -21,7 +21,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type UserQuerier interface {
+type UserQuery interface {
 	GetUserByEmail(ctx context.Context, email string) (models.User, error)
 	CreateUser(ctx context.Context, arg models.CreateUserParams) (models.User, error)
 	CreateEncryption(ctx context.Context, arg models.CreateEncryptionParams) (models.UserEncryption, error)
@@ -30,10 +30,10 @@ type UserQuerier interface {
 
 type Handler struct {
 	cfg *config.Config
-	q   UserQuerier
+	q   UserQuery
 }
 
-func NewHandler(cfg *config.Config, q UserQuerier) *Handler {
+func NewHandler(cfg *config.Config, q UserQuery) *Handler {
 	return &Handler{
 		cfg: cfg,
 		q:   q,

@@ -10,3 +10,5 @@ goose-down:
 	$(GOOSE) down
 goose-create:
 	goose -dir $(MIGRATIONS) create $(NAME) sql
+build:
+	go build cmd/server/main.go
