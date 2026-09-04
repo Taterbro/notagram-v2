@@ -5,23 +5,31 @@
 package models
 
 import (
+	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type Account struct {
-	ID    uuid.UUID
-	Email string
+type User struct {
+	ID            uuid.UUID
+	Email         string
+	Moniker       sql.NullString
+	PasswordHash  string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	AccountActive bool
 }
 
-type Experience struct {
-	ID             uuid.UUID
-	Date           time.Time
-	FrontendDate   string
-	CompanyName    string
-	Role           string
-	Tags           []string
-	Description    string
-	CompanyWebsite string
+type UserEncryption struct {
+	UserID                uuid.UUID
+	PasswordSalt          string
+	PasswordParams        json.RawMessage
+	EncryptedMasterKeyPw  string
+	RecoverySalt          string
+	RecoveryParams        json.RawMessage
+	EncryptedMasterKeyRec string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
