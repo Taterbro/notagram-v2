@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Taterbro/notagram-v2/internal/api"
 	"github.com/Taterbro/notagram-v2/internal/config"
@@ -48,6 +49,19 @@ type SignupBody struct {
 	RecoveryParams        CryptoParams `json:"recovery_params" binding:"required"`
 	EncryptedMasterKeyRec string       `json:"encrypted_master_key_rec" binding:"required"`
 }
+type UserResponse struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Moniker   string `json:"moniker"`
+	CreatedAt string `json:"created_at"`
+}
+
+type SignupResponse struct {
+	User          UserResponse `json:"user"`
+	AccessToken   string       `json:"access_token"`
+	RefreshToken  string       `json:"refresh_token"`
+	AccountActive bool         `json:"account_active"`
+}
 
 func (h Handler) Signup(c *gin.Context) {
 	var req SignupBody
@@ -63,46 +77,79 @@ func (h Handler) Signup(c *gin.Context) {
 	if err == nil {
 		api.Error(c, http.StatusBadRequest, "email already exists; login instead", nil)
 		return
-	} else {
-		if errors.Is(err, sql.ErrNoRows) {
-			bytes, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
-			if err != nil {
-				slog.Error("error while hashing user password", "bcryptError", err)
-				api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-				return
-			}
-			createdUser, err := q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker}, PasswordHash: string(bytes)})
-			if err != nil {
-				slog.Error("error while creating user account", "db_error", err, "user_email", req.Email, "user_moniker", req.Moniker, "password_hash", string(bytes))
-				api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-				return
-			}
-			j, err := json.Marshal(req.PasswordParams)
-			if err != nil {
-				slog.Error("error while marshalling user password params to json", "marshall_error", err)
-				api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-			}
-
-			r, err := json.Marshal(req.RecoveryParams)
-			if err != nil {
-				slog.Error("error while marshalling user recovery params to json", "marshall_error", err)
-				api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-			}
-
-			_, err = q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec})
-			if err != nil {
-				err = q.DeleteUserByID(c, createdUser.ID)
-				if err != nil {
-					slog.Error("failed to delete user data after encryption key failure", "err", err, "user_id", createdUser.ID)
-				}
-				slog.Error("error while creating user encryption keys", "db_error", err, "user_id", createdUser.ID)
-				api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-				return
-			}
-
-		}
 	}
-	api.Success(c, http.StatusOK, map[string]string{"url": "some random bs fr", "message": "open the url in your browser"})
+	if errors.Is(err, sql.ErrNoRows) {
+		bytes, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+		if err != nil {
+			slog.Error("error while hashing user password", "bcryptError", err)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
+		createdUser, err := q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker}, PasswordHash: string(bytes)})
+		if err != nil {
+			slog.Error("error while creating user account", "db_error", err, "user_email", req.Email, "user_moniker", req.Moniker, "password_hash", string(bytes))
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
+		j, err := json.Marshal(req.PasswordParams)
+		if err != nil {
+			slog.Error("error while marshalling user password params to json", "marshall_error", err)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		}
+
+		r, err := json.Marshal(req.RecoveryParams)
+		if err != nil {
+			slog.Error("error while marshalling user recovery params to json", "marshall_error", err)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		}
+
+		_, err = q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec})
+		if err != nil {
+			err = q.DeleteUserByID(c, createdUser.ID)
+			if err != nil {
+				slog.Error("failed to delete user data after encryption key failure", "err", err, "user_id", createdUser.ID)
+			}
+			slog.Error("error while creating user encryption keys", "db_error", err, "user_id", createdUser.ID)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
+		accessToken, err := GenerateAccessToken(createdUser.ID, *h.cfg)
+		if err != nil {
+			slog.Error("error while generating access token", "err", err, "user_id", createdUser.ID)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
+
+		refreshToken, err := GenerateRefreshToken(*h.cfg)
+		if err != nil {
+			slog.Error("error while generating refresh token", "err", err, "user_id", createdUser.ID)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
+
+		moniker := ""
+		if createdUser.Moniker.Valid {
+			moniker = createdUser.Moniker.String
+		}
+
+		resp := SignupResponse{
+			User: UserResponse{
+				ID:        createdUser.ID.String(),
+				Email:     createdUser.Email,
+				Moniker:   moniker,
+				CreatedAt: createdUser.CreatedAt.Format(time.RFC3339),
+			},
+			AccessToken:   accessToken,
+			RefreshToken:  refreshToken,
+			AccountActive: createdUser.AccountActive,
+		}
+
+		api.Success(c, http.StatusCreated, resp)
+		return
+	}
+
+	slog.Error("unexpected error while checking for existing user", "err", err)
+	api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 }
 
 func (h Handler) Login(c *gin.Context) {
