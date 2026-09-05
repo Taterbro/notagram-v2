@@ -19,10 +19,19 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type fakeRedis struct{}
+type fakeRedis struct {
+	keyExists bool
+}
 
 func (f *fakeRedis) Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd {
 	return redis.NewStatusResult("OK", nil)
+}
+
+func (f *fakeRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+	if f.keyExists {
+		return redis.NewStringResult("revoked", nil)
+	}
+	return redis.NewStringResult("", redis.Nil)
 }
 
 type fakeQuerier struct {

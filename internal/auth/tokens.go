@@ -27,20 +27,23 @@ func GenerateAccessToken(user_id uuid.UUID, cfg config.Config) (string, error) {
 		"iss":     "api.notagram.app",
 		"jti":     uuid.NewString(),
 		"user_id": user_id,
+		"type":    "access",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JwtSecret))
 }
 
-func GenerateRefreshToken(cfg config.Config) (string, error) {
+func GenerateRefreshToken(user_id uuid.UUID, cfg config.Config) (string, error) {
 	ttl := 167 * time.Hour
 	expiresAt := time.Now().Add(ttl)
 
 	claims := jwt.MapClaims{
-		"exp": expiresAt.Unix(),
-		"iss": "api.notagram.app",
-		"jti": uuid.NewString(),
+		"exp":     expiresAt.Unix(),
+		"iss":     "api.notagram.app",
+		"jti":     uuid.NewString(),
+		"user_id": user_id,
+		"type":    "refresh",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -53,6 +56,6 @@ func ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("invalid signing method: %s", token.Method.Alg())
 		}
-		return cfg.JwtSecret, nil
+		return []byte(cfg.JwtSecret), nil
 	})
 }

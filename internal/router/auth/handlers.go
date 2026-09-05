@@ -26,6 +26,7 @@ import (
 
 type RedisClient interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
 }
 
 type UserQuery interface {
@@ -204,6 +205,11 @@ func (h Handler) Logout(c *gin.Context) {
 	jti, ok := claims["jti"].(string)
 	if !ok {
 		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
+		return
+	}
+
+	if _, err := h.redis.Get(c.Request.Context(), jti).Result(); err == nil {
+		api.Error(c, http.StatusUnauthorized, "token already revoked", nil)
 		return
 	}
 
