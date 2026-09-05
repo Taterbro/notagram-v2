@@ -5,6 +5,7 @@ import (
 
 	"github.com/Taterbro/notagram-v2/internal/config"
 	"github.com/Taterbro/notagram-v2/internal/db/models"
+	"github.com/Taterbro/notagram-v2/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,5 +15,5 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis Re
 
 	r.POST("/signup", h.Signup)
 	r.GET("/login", h.Login)
-	r.POST("/logout", h.Logout)
+	r.POST("/logout", h.Logout).Use(middleware.RequireTokenType(cfg, middleware.Refresh, redis))
 }

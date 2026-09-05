@@ -133,14 +133,14 @@ func (h Handler) Signup(c *gin.Context) {
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
-		accessToken, err := auth_service.GenerateAccessToken(createdUser.ID, *h.cfg)
+		accessToken, err := auth_service.GenerateUserToken(createdUser.ID, *h.cfg, auth_service.Accesss)
 		if err != nil {
 			slog.Error("error while generating access token", "err", err, "user_id", createdUser.ID)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
 
-		refreshToken, err := auth_service.GenerateRefreshToken(*h.cfg)
+		refreshToken, err := auth_service.GenerateUserToken(createdUser.ID, *h.cfg, auth_service.Refresh)
 		if err != nil {
 			slog.Error("error while generating refresh token", "err", err, "user_id", createdUser.ID)
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
@@ -173,57 +173,20 @@ func (h Handler) Signup(c *gin.Context) {
 }
 
 func (h Handler) Login(c *gin.Context) {
-	//loginState = uuid.New().String()
 	api.Success(c, http.StatusOK, map[string]string{"url": "some random bs fr", "message": "open the url in your browser"})
 }
 
+type TokenValidator interface {
+	ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error)
+}
 type LogoutBody struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
 func (h Handler) Logout(c *gin.Context) {
-	var req LogoutBody
-	if err := c.ShouldBindJSON(&req); err != nil {
-		errs := utils.FormatValidationErrors(err)
-		api.Error(c, http.StatusBadRequest, "invalid body", errs)
-		return
-	}
-
-	token, err := auth_service.ValidateToken(req.RefreshToken, *h.cfg)
-	if err != nil {
-		slog.Info("invalid token error from ValidateToken function.", "err", err)
-		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
-		return
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
-		return
-	}
-
-	jti, ok := claims["jti"].(string)
-	if !ok {
-		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
-		return
-	}
-
-	if _, err := h.redis.Get(c.Request.Context(), jti).Result(); err == nil {
-		api.Error(c, http.StatusUnauthorized, "token already revoked", nil)
-		return
-	}
-
-	exp, ok := claims["exp"].(float64)
-	if !ok {
-		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
-		return
-	}
-
+	exp := c.GetFloat64("exp")
+	jti := c.GetString("jti")
 	ttl := time.Until(time.Unix(int64(exp), 0))
-	if ttl <= 0 {
-		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
-		return
-	}
 
 	if err := h.redis.Set(c.Request.Context(), jti, "revoked", ttl).Err(); err != nil {
 		slog.Error("failed to revoke token in redis", "err", err, "jti", jti)

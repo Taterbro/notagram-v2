@@ -4,7 +4,6 @@ package auth
 // or do we still need to inject dependecies.
 // Google "when to use dependency injection in go"
 import (
-	"fmt"
 	"time"
 
 	"github.com/Taterbro/notagram-v2/internal/config"
@@ -19,7 +18,8 @@ const (
 	Accesss TokenType = "access"
 )
 
-func GenerateAccessToken(user_id uuid.UUID, cfg config.Config) (string, error) {
+func GenerateUserToken(user_id uuid.UUID, cfg config.Config, tt TokenType) (string, error) {
+	tokenType := tt
 	ttl := 15 * time.Minute
 
 	claims := jwt.MapClaims{
@@ -27,35 +27,9 @@ func GenerateAccessToken(user_id uuid.UUID, cfg config.Config) (string, error) {
 		"iss":     "api.notagram.app",
 		"jti":     uuid.NewString(),
 		"user_id": user_id,
-		"type":    "access",
+		"type":    tokenType,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JwtSecret))
-}
-
-func GenerateRefreshToken(user_id uuid.UUID, cfg config.Config) (string, error) {
-	ttl := 167 * time.Hour
-	expiresAt := time.Now().Add(ttl)
-
-	claims := jwt.MapClaims{
-		"exp":     expiresAt.Unix(),
-		"iss":     "api.notagram.app",
-		"jti":     uuid.NewString(),
-		"user_id": user_id,
-		"type":    "refresh",
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	return token.SignedString([]byte(cfg.JwtSecret))
-}
-
-func ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error) {
-	return jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("invalid signing method: %s", token.Method.Alg())
-		}
-		return []byte(cfg.JwtSecret), nil
-	})
 }

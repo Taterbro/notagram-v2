@@ -1,19 +1,26 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Taterbro/notagram-v2/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/redis/go-redis/v9"
 )
 
-func ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error) {
+type TokenStore interface {
+	Get(ctx context.Context, key string) *redis.StringCmd
+}
+
+func IsTokenSigned(tokenString string, cfg *config.Config) (*jwt.Token, error) {
 	return jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("invalid signing method: %s", token.Method.Alg())
@@ -24,16 +31,16 @@ func ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error) {
 
 type TokenType string
 
-const access TokenType = "access"
-const refresh TokenType = "refresh"
+const Access TokenType = "access"
+const Refresh TokenType = "refresh"
 
-func RequireTokenType(cfg config.Config, tt TokenType) gin.HandlerFunc {
+func RequireTokenType(cfg *config.Config, tt TokenType, store TokenStore) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		TokenValidator(c, cfg, tt)
+		TokenValidator(c, cfg, tt, store)
 	}
 }
 
-func TokenValidator(c *gin.Context, cfg config.Config, tt TokenType) {
+func TokenValidator(c *gin.Context, cfg *config.Config, tt TokenType, store TokenStore) {
 	header := c.GetHeader("Authorization")
 	if header == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "missing auth header"})
@@ -46,7 +53,7 @@ func TokenValidator(c *gin.Context, cfg config.Config, tt TokenType) {
 		return
 	}
 
-	token, err := ValidateToken(parts[1], cfg)
+	token, err := IsTokenSigned(parts[1], cfg)
 	if err != nil || !token.Valid {
 		slog.Error("error validating token", "err", err)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "invalid token"})
@@ -56,6 +63,16 @@ func TokenValidator(c *gin.Context, cfg config.Config, tt TokenType) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "invalid token claims"})
+		return
+	}
+
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "invalid token claims"})
+		return
+	}
+	if exp < float64(time.Now().Unix()) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "token expired"})
 		return
 	}
 
@@ -86,7 +103,13 @@ func TokenValidator(c *gin.Context, cfg config.Config, tt TokenType) {
 		return
 	}
 
+	if _, err := store.Get(c.Request.Context(), jti).Result(); err == nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "token expired"})
+		return
+	}
+
 	c.Set("user_id", userID)
+	c.Set("exp", exp)
 	c.Set("jti", jti)
 	c.Next()
 }
