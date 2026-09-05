@@ -15,11 +15,11 @@ var ctx = context.Background()
 
 func main() {
 	cfg, err := config.Load()
-	redisClient := caching.Connect(cfg, ctx)
 	if err != nil {
 		slog.Error("failed to load environment variables", "config_error", err)
 		os.Exit(1)
 	}
+	redisClient := caching.Connect(cfg, ctx)
 
 	db, err := database.Connect(cfg.DatabaseUrl)
 	if err != nil {

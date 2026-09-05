@@ -102,7 +102,7 @@ func (h Handler) Signup(c *gin.Context) {
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
-		createdUser, err := h.q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker}, PasswordHash: string(bytes)})
+		createdUser, err := h.q.CreateUser(c, models.CreateUserParams{Email: req.Email, Moniker: sql.NullString{String: req.Moniker, Valid: true}, PasswordHash: string(bytes)})
 		if err != nil {
 			slog.Error("error while creating user account", "db_error", err, "user_email", req.Email, "user_moniker", req.Moniker, "password_hash", string(bytes))
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
@@ -190,6 +190,7 @@ func (h Handler) Logout(c *gin.Context) {
 
 	token, err := auth_service.ValidateToken(req.RefreshToken, *h.cfg)
 	if err != nil {
+		slog.Info("invalid token error from ValidateToken function.", "err", err)
 		api.Error(c, http.StatusUnauthorized, "invalid token", nil)
 		return
 	}
