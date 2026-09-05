@@ -187,6 +187,7 @@ func (h Handler) Logout(c *gin.Context) {
 	exp := c.GetFloat64("exp")
 	jti := c.GetString("jti")
 	ttl := time.Until(time.Unix(int64(exp), 0))
+	// slog.Info("from the logout handler", "jti", jti)
 
 	if err := h.redis.Set(c.Request.Context(), jti, "revoked", ttl).Err(); err != nil {
 		slog.Error("failed to revoke token in redis", "err", err, "jti", jti)

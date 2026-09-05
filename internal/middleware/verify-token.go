@@ -103,10 +103,14 @@ func TokenValidator(c *gin.Context, cfg *config.Config, tt TokenType, store Toke
 		return
 	}
 
-	if _, err := store.Get(c.Request.Context(), jti).Result(); err == nil {
+	_, err = store.Get(c.Request.Context(), jti).Result()
+	if err == nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]string{"message": "token expired"})
 		return
 	}
+
+	// slog.Info("the store key info", "store_key", storeKey)
+	// slog.Info("from middleware", "jti", jti)
 
 	c.Set("user_id", userID)
 	c.Set("exp", exp)

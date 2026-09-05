@@ -15,5 +15,5 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis Re
 
 	r.POST("/signup", h.Signup)
 	r.GET("/login", h.Login)
-	r.POST("/logout", h.Logout).Use(middleware.RequireTokenType(cfg, middleware.Refresh, redis))
+	r.POST("/logout", middleware.RequireTokenType(cfg, middleware.Refresh, redis), h.Logout)
 }
