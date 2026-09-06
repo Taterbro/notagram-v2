@@ -14,8 +14,8 @@ import (
 
 const createEncryption = `-- name: CreateEncryption :one
 INSERT INTO user_encryption(
-    user_id, password_salt, password_params, encrypted_master_key_pw, recovery_salt, recovery_params, encrypted_master_key_rec
-) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING user_id, password_salt, password_params, encrypted_master_key_pw, recovery_salt, recovery_params, encrypted_master_key_rec, created_at, updated_at
+    user_id, password_salt, password_params, encrypted_master_key_pw, recovery_salt, recovery_params, encrypted_master_key_rec, recovery_hash
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING user_id, password_salt, password_params, encrypted_master_key_pw, recovery_salt, recovery_params, encrypted_master_key_rec, recovery_hash, created_at, updated_at
 `
 
 type CreateEncryptionParams struct {
@@ -26,6 +26,7 @@ type CreateEncryptionParams struct {
 	RecoverySalt          string
 	RecoveryParams        json.RawMessage
 	EncryptedMasterKeyRec string
+	RecoveryHash          string
 }
 
 func (q *Queries) CreateEncryption(ctx context.Context, arg CreateEncryptionParams) (UserEncryption, error) {
@@ -37,6 +38,7 @@ func (q *Queries) CreateEncryption(ctx context.Context, arg CreateEncryptionPara
 		arg.RecoverySalt,
 		arg.RecoveryParams,
 		arg.EncryptedMasterKeyRec,
+		arg.RecoveryHash,
 	)
 	var i UserEncryption
 	err := row.Scan(
@@ -47,8 +49,35 @@ func (q *Queries) CreateEncryption(ctx context.Context, arg CreateEncryptionPara
 		&i.RecoverySalt,
 		&i.RecoveryParams,
 		&i.EncryptedMasterKeyRec,
+		&i.RecoveryHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateEncryption = `-- name: UpdateEncryption :exec
+UPDATE user_encryption SET
+    password_salt = $2,
+    password_params = $3,
+    encrypted_master_key_pw = $4,
+    updated_at = now()
+WHERE user_id = $1
+`
+
+type UpdateEncryptionParams struct {
+	UserID               uuid.UUID
+	PasswordSalt         string
+	PasswordParams       json.RawMessage
+	EncryptedMasterKeyPw string
+}
+
+func (q *Queries) UpdateEncryption(ctx context.Context, arg UpdateEncryptionParams) error {
+	_, err := q.db.ExecContext(ctx, updateEncryption,
+		arg.UserID,
+		arg.PasswordSalt,
+		arg.PasswordParams,
+		arg.EncryptedMasterKeyPw,
+	)
+	return err
 }

@@ -29,6 +29,7 @@ type UserEncryption struct {
 	RecoverySalt          string
 	RecoveryParams        json.RawMessage
 	EncryptedMasterKeyRec string
+	RecoveryHash          string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }

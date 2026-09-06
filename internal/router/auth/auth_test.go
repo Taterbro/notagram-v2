@@ -38,22 +38,38 @@ func (f *fakeRedis) Get(ctx context.Context, key string) *redis.StringCmd {
 }
 
 type fakeQuerier struct {
-	getUserErr       error
-	getUserResult    models.User
-	createUserResult models.User
-	createUserErr    error
-	createEncErr     error
-	deletedUserID    uuid.UUID
+	getUserErr            error
+	getUserResult         models.User
+	getUserByIDErr        error
+	getUserByIDResult     models.User
+	createUserResult      models.User
+	createUserErr         error
+	createEncErr          error
+	updateUserPasswordErr error
+	updateEncryptionErr   error
+	deletedUserID         uuid.UUID
+
+	updatePasswordCalls []models.UpdateUserPasswordParams
 }
 
 func (f *fakeQuerier) GetUserByEmail(ctx context.Context, email string) (models.User, error) {
 	return f.getUserResult, f.getUserErr
+}
+func (f *fakeQuerier) GetUserByID(ctx context.Context, id uuid.UUID) (models.User, error) {
+	return f.getUserByIDResult, f.getUserByIDErr
 }
 func (f *fakeQuerier) CreateUser(ctx context.Context, arg models.CreateUserParams) (models.User, error) {
 	return f.createUserResult, f.createUserErr
 }
 func (f *fakeQuerier) CreateEncryption(ctx context.Context, arg models.CreateEncryptionParams) (models.UserEncryption, error) {
 	return models.UserEncryption{}, f.createEncErr
+}
+func (f *fakeQuerier) UpdateUserPassword(ctx context.Context, arg models.UpdateUserPasswordParams) error {
+	f.updatePasswordCalls = append(f.updatePasswordCalls, arg)
+	return f.updateUserPasswordErr
+}
+func (f *fakeQuerier) UpdateEncryption(ctx context.Context, arg models.UpdateEncryptionParams) error {
+	return f.updateEncryptionErr
 }
 func (f *fakeQuerier) DeleteUserByID(ctx context.Context, id uuid.UUID) error {
 	f.deletedUserID = id
@@ -73,6 +89,7 @@ func validSignupBody() SignupBody {
 			Version:     19,
 		},
 		EncryptedMasterKeyPW: "encrypted-key-pw-blob",
+		RecoveryPhrase:       "correct horse battery staple",
 		RecoverySalt:         "recoverysaltvalue",
 		RecoveryParams: CryptoParams{
 			Memory:      65536,

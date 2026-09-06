@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS user_encryption (
 
     recovery_salt               TEXT NOT NULL,
     recovery_params             JSONB NOT NULL,
-    encrypted_master_key_rec    TEXT NOT NULL, 
+    encrypted_master_key_rec    TEXT NOT NULL,
+
+    recovery_hash TEXT NOT NULL,
 
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()

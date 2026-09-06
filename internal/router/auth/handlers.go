@@ -30,8 +30,11 @@ type RedisClient interface {
 
 type UserQuery interface {
 	GetUserByEmail(ctx context.Context, email string) (models.User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (models.User, error)
 	CreateUser(ctx context.Context, arg models.CreateUserParams) (models.User, error)
 	CreateEncryption(ctx context.Context, arg models.CreateEncryptionParams) (models.UserEncryption, error)
+	UpdateUserPassword(ctx context.Context, arg models.UpdateUserPasswordParams) error
+	UpdateEncryption(ctx context.Context, arg models.UpdateEncryptionParams) error
 	DeleteUserByID(ctx context.Context, id uuid.UUID) error
 }
 
@@ -63,6 +66,7 @@ type SignupBody struct {
 	PasswordSalt          string       `json:"password_salt" binding:"required"`
 	PasswordParams        CryptoParams `json:"password_params" binding:"required"`
 	EncryptedMasterKeyPW  string       `json:"encrypted_master_key_pw" binding:"required"`
+	RecoveryPhrase        string       `json:"recovery_phrase" binding:"required"`
 	RecoverySalt          string       `json:"recovery_salt" binding:"required"`
 	RecoveryParams        CryptoParams `json:"recovery_params" binding:"required"`
 	EncryptedMasterKeyRec string       `json:"encrypted_master_key_rec" binding:"required"`
@@ -101,6 +105,12 @@ func (h Handler) Signup(c *gin.Context) {
 			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 			return
 		}
+		recoveryHash, err := bcrypt.GenerateFromPassword([]byte(req.RecoveryPhrase), 12)
+		if err != nil {
+			slog.Error("error while hashing recovery phrase", "bcryptError", err)
+			api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+			return
+		}
 		createdUser, err := h.q.CreateUser(c, models.CreateUserParams{Email: strings.ToLower(req.Email), Moniker: sql.NullString{String: req.Moniker, Valid: true}, PasswordHash: string(bytes)})
 		if err != nil {
 			slog.Error("error while creating user account", "db_error", err, "user_email", req.Email, "user_moniker", req.Moniker, "password_hash", string(bytes))
@@ -121,7 +131,7 @@ func (h Handler) Signup(c *gin.Context) {
 			return
 		}
 
-		_, err = h.q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec})
+		_, err = h.q.CreateEncryption(c, models.CreateEncryptionParams{UserID: createdUser.ID, PasswordSalt: req.PasswordSalt, PasswordParams: j, EncryptedMasterKeyPw: req.EncryptedMasterKeyPW, RecoverySalt: req.RecoverySalt, RecoveryParams: r, EncryptedMasterKeyRec: req.EncryptedMasterKeyRec, RecoveryHash: string(recoveryHash)})
 		if err != nil {
 			err = h.q.DeleteUserByID(c, createdUser.ID)
 			if err != nil {
@@ -167,10 +177,6 @@ func (h Handler) Signup(c *gin.Context) {
 
 	slog.Error("unexpected error while checking for existing user", "err", err)
 	api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
-}
-
-func (h Handler) Login(c *gin.Context) {
-	api.Success(c, http.StatusOK, map[string]string{"url": "some random bs fr", "message": "open the url in your browser"})
 }
 
 type SigninBody struct {
@@ -235,8 +241,33 @@ func (h Handler) Signin(c *gin.Context) {
 	api.Success(c, http.StatusOK, resp)
 }
 
+func (h Handler) Refresh(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		api.Error(c, http.StatusUnauthorized, "missing user id", nil)
+		return
+	}
+
+	accessToken, err := auth_service.GenerateUserToken(userID.(uuid.UUID), *h.cfg, auth_service.Accesss)
+	if err != nil {
+		slog.Error("error while generating access token", "err", err, "user_id", userID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	api.Success(c, http.StatusOK, map[string]string{"access_token": accessToken})
+}
+
 type LogoutBody struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+type UpdatePasswordBody struct {
+	CurrentPassword         string       `json:"current_password" binding:"required"`
+	NewPassword             string       `json:"new_password" binding:"required,min=8"`
+	NewPasswordSalt         string       `json:"new_password_salt" binding:"required"`
+	NewPasswordParams       CryptoParams `json:"new_password_params" binding:"required"`
+	NewEncryptedMasterKeyPw string       `json:"new_encrypted_master_key_pw" binding:"required"`
 }
 
 func (h Handler) Logout(c *gin.Context) {
@@ -251,4 +282,68 @@ func (h Handler) Logout(c *gin.Context) {
 	}
 
 	api.Success(c, http.StatusOK, nil)
+}
+
+func (h Handler) UpdatePassword(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		api.Error(c, http.StatusUnauthorized, "missing user id", nil)
+		return
+	}
+
+	var req UpdatePasswordBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errs := utils.FormatValidationErrors(err)
+		api.Error(c, http.StatusBadRequest, "invalid body", errs)
+		return
+	}
+
+	user, err := h.q.GetUserByID(c, userID.(uuid.UUID))
+	if errors.Is(err, sql.ErrNoRows) {
+		api.Error(c, http.StatusNotFound, "user not found", nil)
+		return
+	}
+	if err != nil {
+		slog.Error("error while fetching user for password update", "err", err, "user_id", userID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		api.Error(c, http.StatusBadRequest, "current password is incorrect", nil)
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), 12)
+	if err != nil {
+		slog.Error("error while hashing new password", "bcryptError", err)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	params, err := json.Marshal(req.NewPasswordParams)
+	if err != nil {
+		slog.Error("error while marshalling new password params to json", "marshall_error", err)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	if err := h.q.UpdateUserPassword(c, models.UpdateUserPasswordParams{ID: user.ID, PasswordHash: string(newHash)}); err != nil {
+		slog.Error("error while updating user password", "db_error", err, "user_id", user.ID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	err = h.q.UpdateEncryption(c, models.UpdateEncryptionParams{UserID: user.ID, PasswordSalt: req.NewPasswordSalt, PasswordParams: params, EncryptedMasterKeyPw: req.NewEncryptedMasterKeyPw})
+	if err != nil {
+		rollbackErr := h.q.UpdateUserPassword(c, models.UpdateUserPasswordParams{ID: user.ID, PasswordHash: user.PasswordHash})
+		if rollbackErr != nil {
+			slog.Error("failed to restore password hash after encryption update failure", "err", rollbackErr, "user_id", user.ID)
+		}
+		slog.Error("error while updating user encryption keys", "db_error", err, "user_id", user.ID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
