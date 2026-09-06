@@ -16,7 +16,6 @@ import (
 	"github.com/Taterbro/notagram-v2/internal/db/models"
 	"github.com/Taterbro/notagram-v2/internal/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
@@ -76,10 +75,9 @@ type UserResponse struct {
 }
 
 type SignupResponse struct {
-	User          UserResponse `json:"user"`
-	AccessToken   string       `json:"access_token"`
-	RefreshToken  string       `json:"refresh_token"`
-	AccountActive bool         `json:"account_active"`
+	User         UserResponse `json:"user"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token"`
 }
 
 func (h Handler) Signup(c *gin.Context) {
@@ -159,9 +157,8 @@ func (h Handler) Signup(c *gin.Context) {
 				Moniker:   moniker,
 				CreatedAt: createdUser.CreatedAt.Format(time.RFC3339),
 			},
-			AccessToken:   accessToken,
-			RefreshToken:  refreshToken,
-			AccountActive: createdUser.AccountActive,
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
 		}
 
 		api.Success(c, http.StatusCreated, resp)
@@ -176,9 +173,68 @@ func (h Handler) Login(c *gin.Context) {
 	api.Success(c, http.StatusOK, map[string]string{"url": "some random bs fr", "message": "open the url in your browser"})
 }
 
-type TokenValidator interface {
-	ValidateToken(tokenString string, cfg config.Config) (*jwt.Token, error)
+type SigninBody struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
+
+func (h Handler) Signin(c *gin.Context) {
+	var req SigninBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errs := utils.FormatValidationErrors(err)
+		api.Error(c, http.StatusBadRequest, "invalid body", errs)
+		return
+	}
+
+	user, err := h.q.GetUserByEmail(c, strings.ToLower(req.Email))
+	if errors.Is(err, sql.ErrNoRows) {
+		api.Error(c, http.StatusUnauthorized, "invalid email or password", nil)
+		return
+	}
+	if err != nil {
+		slog.Error("unexpected error while fetching user for signin", "err", err, "user_email", strings.ToLower(req.Email))
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		api.Error(c, http.StatusUnauthorized, "invalid email or password", nil)
+		return
+	}
+
+	accessToken, err := auth_service.GenerateUserToken(user.ID, *h.cfg, auth_service.Accesss)
+	if err != nil {
+		slog.Error("error while generating access token", "err", err, "user_id", user.ID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	refreshToken, err := auth_service.GenerateUserToken(user.ID, *h.cfg, auth_service.Refresh)
+	if err != nil {
+		slog.Error("error while generating refresh token", "err", err, "user_id", user.ID)
+		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
+		return
+	}
+
+	moniker := ""
+	if user.Moniker.Valid {
+		moniker = user.Moniker.String
+	}
+
+	resp := SignupResponse{
+		User: UserResponse{
+			ID:        user.ID.String(),
+			Email:     user.Email,
+			Moniker:   moniker,
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		},
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}
+
+	api.Success(c, http.StatusOK, resp)
+}
+
 type LogoutBody struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }

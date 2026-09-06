@@ -14,6 +14,6 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis Re
 	h := NewHandler(cfg, q, redis)
 
 	r.POST("/signup", h.Signup)
-	r.GET("/login", h.Login)
+	r.POST("/signin", h.Signin)
 	r.POST("/logout", middleware.RequireTokenType(cfg, middleware.Refresh, redis), h.Logout)
 }

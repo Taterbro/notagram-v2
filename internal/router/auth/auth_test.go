@@ -17,6 +17,7 @@ import (
 	"github.com/go-playground/assert/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type fakeRedis struct {
@@ -38,6 +39,7 @@ func (f *fakeRedis) Get(ctx context.Context, key string) *redis.StringCmd {
 
 type fakeQuerier struct {
 	getUserErr       error
+	getUserResult    models.User
 	createUserResult models.User
 	createUserErr    error
 	createEncErr     error
@@ -45,7 +47,7 @@ type fakeQuerier struct {
 }
 
 func (f *fakeQuerier) GetUserByEmail(ctx context.Context, email string) (models.User, error) {
-	return models.User{}, f.getUserErr
+	return f.getUserResult, f.getUserErr
 }
 func (f *fakeQuerier) CreateUser(ctx context.Context, arg models.CreateUserParams) (models.User, error) {
 	return f.createUserResult, f.createUserErr
@@ -86,6 +88,79 @@ func testConfig() *config.Config {
 		JwtSecret: "eiojdkafd0aufpoidsj",
 	}
 	return fg
+}
+
+func validSigninUser(passwordHash string) models.User {
+	return models.User{
+		ID:           uuid.New(),
+		Email:        "test@example.com",
+		Moniker:      sql.NullString{String: "tester", Valid: true},
+		PasswordHash: passwordHash,
+		CreatedAt:    time.Now(),
+	}
+}
+
+func TestSignin(t *testing.T) {
+	const password = "supersecretpassword"
+	hash, _ := bcrypt.GenerateFromPassword([]byte(password), 12)
+	wrongHash, _ := bcrypt.GenerateFromPassword([]byte("completelydifferent"), 12)
+
+	tests := []struct {
+		name       string
+		q          *fakeQuerier
+		body       SigninBody
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			q:          &fakeQuerier{getUserResult: validSigninUser(string(hash))},
+			body:       SigninBody{Email: "test@example.com", Password: password},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "email not found",
+			q:          &fakeQuerier{getUserErr: sql.ErrNoRows},
+			body:       SigninBody{Email: "nobody@example.com", Password: password},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "wrong password",
+			q:          &fakeQuerier{getUserResult: validSigninUser(string(wrongHash))},
+			body:       SigninBody{Email: "test@example.com", Password: password},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "db error",
+			q:          &fakeQuerier{getUserErr: errors.New("boom")},
+			body:       SigninBody{Email: "test@example.com", Password: password},
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "invalid body - missing password",
+			q:          &fakeQuerier{getUserErr: sql.ErrNoRows},
+			body:       SigninBody{Email: "a@b.com"},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(testConfig(), tt.q, &fakeRedis{})
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+
+			b, _ := json.Marshal(tt.body)
+			c.Request = httptest.NewRequest(http.MethodPost, "/signin", bytes.NewReader(b))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			h.Signin(c)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
 }
 
 func TestSignup(t *testing.T) {

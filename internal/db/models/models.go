@@ -13,13 +13,12 @@ import (
 )
 
 type User struct {
-	ID            uuid.UUID
-	Email         string
-	Moniker       sql.NullString
-	PasswordHash  string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	AccountActive bool
+	ID           uuid.UUID
+	Email        string
+	Moniker      sql.NullString
+	PasswordHash string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type UserEncryption struct {

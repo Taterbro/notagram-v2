@@ -8,8 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     moniker         CITEXT,
     password_hash   TEXT NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    account_active  BOOLEAN NOT NULL DEFAULT false
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- +goose Down
