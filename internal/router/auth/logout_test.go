@@ -40,6 +40,7 @@ func TestLogout(t *testing.T) {
 			h.Logout(c)
 
 			assert.Equal(t, tt.wantStatus, w.Code)
+			assert.Equal(t, tt.r.storedKey, "nothing")
 		})
 	}
 }

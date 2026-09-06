@@ -21,9 +21,11 @@ import (
 
 type fakeRedis struct {
 	keyExists bool
+	storedKey string
 }
 
 func (f *fakeRedis) Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd {
+	f.storedKey = key
 	return redis.NewStatusResult("OK", nil)
 }
 
