@@ -56,6 +56,28 @@ func (q *Queries) CreateEncryption(ctx context.Context, arg CreateEncryptionPara
 	return i, err
 }
 
+const getEncryptionByUserID = `-- name: GetEncryptionByUserID :one
+SELECT user_id, password_salt, password_params, encrypted_master_key_pw, recovery_salt, recovery_params, encrypted_master_key_rec, recovery_hash, created_at, updated_at FROM user_encryption WHERE user_id = $1
+`
+
+func (q *Queries) GetEncryptionByUserID(ctx context.Context, userID uuid.UUID) (UserEncryption, error) {
+	row := q.db.QueryRowContext(ctx, getEncryptionByUserID, userID)
+	var i UserEncryption
+	err := row.Scan(
+		&i.UserID,
+		&i.PasswordSalt,
+		&i.PasswordParams,
+		&i.EncryptedMasterKeyPw,
+		&i.RecoverySalt,
+		&i.RecoveryParams,
+		&i.EncryptedMasterKeyRec,
+		&i.RecoveryHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateEncryption = `-- name: UpdateEncryption :exec
 UPDATE user_encryption SET
     password_salt = $2,

@@ -10,3 +10,6 @@ UPDATE user_encryption SET
     encrypted_master_key_pw = $4,
     updated_at = now()
 WHERE user_id = $1;
+
+-- name: GetEncryptionByUserID :one
+SELECT * FROM user_encryption WHERE user_id = $1;
