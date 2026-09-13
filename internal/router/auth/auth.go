@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis RedisClient) {
+func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis RedisClient, rateLimit gin.HandlerFunc) {
 	q := models.New(db)
 	h := NewHandler(cfg, q, redis)
 
@@ -19,4 +19,5 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *sql.DB, redis Re
 	r.POST("/refresh", middleware.RequireTokenType(cfg, middleware.Refresh, redis), h.Refresh)
 	r.POST("/password/change", middleware.RequireTokenType(cfg, middleware.Access, redis), h.UpdatePassword)
 	r.POST("/password/", middleware.RequireTokenType(cfg, middleware.Access, redis), h.UpdatePassword)
+	r.POST("/recovery/", middleware.RequireTokenType(cfg, middleware.Access, redis), h.GetRecoveryKey)
 }

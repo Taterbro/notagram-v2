@@ -36,7 +36,7 @@ type UserQuery interface {
 	UpdateUserPassword(ctx context.Context, arg models.UpdateUserPasswordParams) error
 	UpdateEncryption(ctx context.Context, arg models.UpdateEncryptionParams) error
 	DeleteUserByID(ctx context.Context, id uuid.UUID) error
-	GetEncryptionByID(ctx context.Context, id uuid.UUID) (models.UserEncryption, error)
+	GetEncryptionByUserID(ctx context.Context, id uuid.UUID) (models.UserEncryption, error)
 }
 
 type Handler struct {
@@ -210,7 +210,7 @@ func (h Handler) Signin(c *gin.Context) {
 		api.Error(c, http.StatusInternalServerError, "something went horribly wrong", nil)
 		return
 	}
-	encryption, err := h.q.GetEncryptionByID(c, user.ID)
+	encryption, err := h.q.GetEncryptionByUserID(c, user.ID)
 	if err != nil {
 		slog.Error("error getting user encryption", "err", err, "user_id", user.ID)
 		api.Error(c, 400, "error getting user credentials", nil)
@@ -363,13 +363,23 @@ func (h Handler) UpdatePassword(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+type GetRecoveryKeyBody struct {
+	RecoveryPhrase string `json:"recovery_phrase" binding:"required"`
+	Email          string `json:"email" binding:"required,email"`
+}
+
 func (h Handler) GetRecoveryKey(c *gin.Context) {
-	email := c.Query("email")
-	if email == "" {
+	var req GetRecoveryKeyBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errs := utils.FormatValidationErrors(err)
+		api.Error(c, http.StatusBadRequest, "invalid body", errs)
+		return
+	}
+	if req.Email == "" {
 		api.Error(c, http.StatusBadRequest, "no email in query params", nil)
 		return
 	}
-	user, err := h.q.GetUserByEmail(c, email)
+	user, err := h.q.GetUserByEmail(c, req.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			api.Success(c, http.StatusOK, map[string]string{"recovery_master_key": uuid.NewString()})
@@ -380,10 +390,10 @@ func (h Handler) GetRecoveryKey(c *gin.Context) {
 			return
 		}
 	}
-	recovery, err := h.q.GetEncryptionByID(c, user.ID)
+	recovery, err := h.q.GetEncryptionByUserID(c, user.ID)
 	if err != nil {
-		if errors.Is(sql.ErrNoRows, err) {
-			slog.Info("missing encryption data??", "user_id", recovery.UserID)
+		if errors.Is(err, sql.ErrNoRows) {
+			slog.Info("missing encryption data??", "user_id", user.ID)
 			api.Error(c, http.StatusNotFound, "no user encryption data found for some reason", nil)
 			return
 		} else {
@@ -392,11 +402,16 @@ func (h Handler) GetRecoveryKey(c *gin.Context) {
 			return
 		}
 	}
+	if err := bcrypt.CompareHashAndPassword([]byte(recovery.RecoveryHash), []byte(req.RecoveryPhrase)); err != nil {
+		api.Error(c, http.StatusUnauthorized, "invalid recovery phrase", nil)
+		return
+	}
 	api.Success(c, http.StatusOK, map[string]string{"recovery_master_key": recovery.EncryptedMasterKeyRec})
 }
 
 type RecoverPasswordBody struct {
 	Email                   string       `json:"email" binding:"required,email"`
+	RecoveryPhrase          string       `json:"recovery_phrase" binding:"required"`
 	NewPassword             string       `json:"new_password" binding:"required,min=8"`
 	NewPasswordSalt         string       `json:"new_password_salt" binding:"required"`
 	NewPasswordParams       CryptoParams `json:"new_password_params" binding:"required"`
