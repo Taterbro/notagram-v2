@@ -45,9 +45,11 @@ type fakeQuerier struct {
 	createUserResult      models.User
 	createUserErr         error
 	createEncErr          error
-	updateUserPasswordErr error
-	updateEncryptionErr   error
-	deletedUserID         uuid.UUID
+	updateUserPasswordErr     error
+	updateEncryptionErr       error
+	getEncryptionByUserIDErr  error
+	getEncryptionByUserIDRes  models.UserEncryption
+	deletedUserID             uuid.UUID
 
 	updatePasswordCalls []models.UpdateUserPasswordParams
 }
@@ -70,6 +72,9 @@ func (f *fakeQuerier) UpdateUserPassword(ctx context.Context, arg models.UpdateU
 }
 func (f *fakeQuerier) UpdateEncryption(ctx context.Context, arg models.UpdateEncryptionParams) error {
 	return f.updateEncryptionErr
+}
+func (f *fakeQuerier) GetEncryptionByUserID(ctx context.Context, id uuid.UUID) (models.UserEncryption, error) {
+	return f.getEncryptionByUserIDRes, f.getEncryptionByUserIDErr
 }
 func (f *fakeQuerier) DeleteUserByID(ctx context.Context, id uuid.UUID) error {
 	f.deletedUserID = id

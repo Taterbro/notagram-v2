@@ -10,7 +10,7 @@ func FormatValidationErrors(err error) map[string]string {
 	// Type assert to validator.ValidationErrors
 	if validationErrors, ok := err.(validator.ValidationErrors); ok {
 		for _, fieldErr := range validationErrors {
-			field := fieldErr.StructField()
+			field := fieldErr.Field()
 			tag := fieldErr.Tag()
 			param := fieldErr.Param()
 
