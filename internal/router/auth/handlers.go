@@ -368,6 +368,7 @@ type GetRecoveryKeyBody struct {
 	Email          string `json:"email" binding:"required,email"`
 }
 
+// I don't really know why I made this handler, I can't remember what my thought process was here
 func (h Handler) GetRecoveryKey(c *gin.Context) {
 	var req GetRecoveryKeyBody
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -488,4 +489,17 @@ func (h Handler) UpdatePasswordWithRecoveryPhrase(c *gin.Context) {
 	}
 
 	api.Success(c, http.StatusOK, nil)
+}
+
+func (h Handler) ResetPassword(c *gin.Context) {
+	/*
+		This feature is still in dev because it requires sending emails.
+		The way it works is
+		- User requests reset with their email attached
+		- NGram generates a code, stores it in cache with their user-id and a password-reset prefix as key and sends code to their email address
+		- they enter the code and password
+		- if valid, reset and consume code so it's one time use
+		- if invalid, error
+		- password is reset
+	*/
 }
