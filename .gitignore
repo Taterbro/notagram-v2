@@ -28,6 +28,8 @@ go.work.sum
 .env
 
 docs.md
+Notagram-API-Design.md
+notagram-database-design.sql
 
 # Editor/IDE
 # .idea/
